@@ -222,6 +222,7 @@ CREATE TABLE pago (
     url_pasarela                varchar(500),
     qr_url                      varchar(500),
     estado_pago                 varchar(30) NOT NULL DEFAULT 'APROBADO',
+    factura_url                 varchar(500),
     CONSTRAINT pago_pk PRIMARY KEY (id_pago),
     CONSTRAINT pago_aviso_fk FOREIGN KEY (aviso_id_aviso) REFERENCES aviso (id_aviso),
     CONSTRAINT pago_metodo_pago_fk FOREIGN KEY (metodo_pago_id_metodo_pago)

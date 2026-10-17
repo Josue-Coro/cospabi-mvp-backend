@@ -331,6 +331,7 @@ class PagoOut(Salida):
     metodo_pago_id_metodo_pago: int
     caja_id_caja: Optional[int]
     id_factura: Optional[int]
+    factura_url: Optional[str]
 
 
 # ============================ OPERACIONES ============================
@@ -445,3 +446,20 @@ class SocioPortalOut(BaseModel):
     id_socio: int
     codigo_fijo: int
     nombre_socio: str
+
+
+class PagoQrIn(DatosFactura):
+    """Datos para pagar un aviso con QR desde el portal (Libelula emite la factura)."""
+
+    tipo_documento: Literal["CI", "NIT"] = Field("CI", description="Tipo de documento para la factura")
+
+
+class PagoQrOut(BaseModel):
+    id_pago: int
+    id_aviso: int
+    estado: str = Field(description="PENDIENTE, APROBADO o EXPIRADO")
+    monto: float
+    qr_url: Optional[str]
+    url_pasarela: Optional[str]
+    codigo_recaudacion: Optional[str]
+    factura_url: Optional[str]

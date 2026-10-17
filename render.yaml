@@ -17,3 +17,7 @@ services:
         sync: false
       - key: CORS_ORIGENES # solo los dos frontends de Vercel pueden llamar a la API
         value: "https://cospabi-mvp-frontend.vercel.app,https://cospabi-socio.vercel.app"
+      - key: LIBELULA_APPKEY
+        sync: false # llave de Libelula (pago con QR); se pega en el panel de Render
+      - key: PORTAL_URL
+        value: https://cospabi-socio.vercel.app

@@ -416,6 +416,8 @@ class Pago(Base):
     url_pasarela = Column(String(500))
     qr_url = Column(String(500))
     estado_pago = Column(String(30), nullable=False, server_default="APROBADO")
+    # Factura emitida por Libelula en los pagos con QR del portal
+    factura_url = Column(String(500))
 
     aviso = relationship("Aviso", lazy="joined")
     metodo_pago = relationship("MetodoPago", lazy="joined")

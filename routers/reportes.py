@@ -41,6 +41,7 @@ def fila_pago(pago: models.Pago) -> dict:
         "cajero": pago.cajero,
         "id_transaccion": pago.id_transaccion,
         "numero_factura": pago.factura.numero_factura if pago.factura else None,
+        "factura_url": pago.factura_url,
     }
 
 

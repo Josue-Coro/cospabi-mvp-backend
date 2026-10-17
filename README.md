@@ -46,6 +46,20 @@ Usuarios de demostración (cambiarlos en un sistema real):
 - Personal: `admin` (clave del `.env`), `cajero` / `cajero123`, `plomero` / `plomero123`
 - Portal: código fijo `2001`, `2002`, `2003`, `2005`, `2009` o `2012` / `socio123`
 
+## Pago con QR (Libélula)
+
+El portal del socio paga con la pasarela **Libélula** (`libelula.py`):
+
+1. `POST /api/v1/portal/avisos/{id}/pagar-qr` registra la deuda en Libélula (REGISTRAR DEUDA) y
+   devuelve el QR y la URL de la pasarela. El pago queda `PENDIENTE`.
+2. Libélula llama a `/api/v1/portal/libelula/pago-exitoso?transaction_id=...` al pagarse. La API
+   no confía en esa llamada: confirma con CONSULTAR DEUDAS POR IDENTIFICADOR antes de aprobar.
+3. El portal consulta `GET /api/v1/portal/pagos-qr/{id}` cada pocos segundos; si Libélula ya lo
+   registra como pagado, se aprueba el pago, el aviso pasa a PAGADO y se guarda la factura que
+   emite Libélula (`factura_url`).
+
+Requiere `LIBELULA_APPKEY` (para pruebas, la llave de pruebas que asigna Libélula).
+
 ## Variables de entorno
 
 Ver `.env.example`. El archivo `.env` real nunca se sube al repositorio.

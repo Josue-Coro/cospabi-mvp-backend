@@ -310,6 +310,36 @@ def actualizar_vencidos(db: Session) -> None:
 
 
 # -------------------------------- Cobro --------------------------------
+def validar_cobro(db: Session, aviso: models.Aviso) -> None:
+    """El aviso debe estar pendiente o vencido y no puede haber uno anterior sin pagar."""
+    if aviso.estado.estado in ("PAGADO", "ANULADO"):
+        raise HTTPException(
+            status_code=400, detail=f"El aviso está {aviso.estado.estado} y no se puede cobrar"
+        )
+
+    periodo_bloqueante = aviso_anterior_pendiente(db, aviso)
+    if periodo_bloqueante:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"El socio tiene un aviso anterior sin pagar del periodo {periodo_bloqueante}. "
+                "Se cobra primero la deuda más antigua."
+            ),
+        )
+
+
+def aplicar_pago(db: Session, aviso: models.Aviso, pago: models.Pago) -> None:
+    """Marca el aviso como pagado junto con sus cargos extra y su cuota de inscripcion."""
+    cargos, cuotas = componentes_aviso(db, aviso.socio_id_socio, aviso.periodo_id_periodo)
+    for cargo in cargos:
+        cargo.estado = "APLICADO"
+        cargo.pago_id_pago = pago.id_pago
+    for cuota in cuotas:
+        cuota.estado = "PAGADA"
+        cuota.pago_id_pago = pago.id_pago
+    aviso.estado_id_estado = obtener_estado(db, "PAGADO").id_estado
+
+
 def cobrar_aviso(
     db: Session,
     aviso: models.Aviso,
@@ -326,20 +356,7 @@ def cobrar_aviso(
     anterior sin pagar del mismo socio y no hay pagos parciales. Los cargos
     extra y la cuota de inscripcion del aviso quedan pagados con el.
     """
-    if aviso.estado.estado in ("PAGADO", "ANULADO"):
-        raise HTTPException(
-            status_code=400, detail=f"El aviso está {aviso.estado.estado} y no se puede cobrar"
-        )
-
-    periodo_bloqueante = aviso_anterior_pendiente(db, aviso)
-    if periodo_bloqueante:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"El socio tiene un aviso anterior sin pagar del periodo {periodo_bloqueante}. "
-                "Se cobra primero la deuda más antigua."
-            ),
-        )
+    validar_cobro(db, aviso)
 
     total = Decimal(aviso.total_aviso)
     vuelto = Decimal("0")
@@ -373,16 +390,7 @@ def cobrar_aviso(
     )
     db.add(pago)
     db.flush()
-
-    cargos, cuotas = componentes_aviso(db, aviso.socio_id_socio, aviso.periodo_id_periodo)
-    for cargo in cargos:
-        cargo.estado = "APLICADO"
-        cargo.pago_id_pago = pago.id_pago
-    for cuota in cuotas:
-        cuota.estado = "PAGADA"
-        cuota.pago_id_pago = pago.id_pago
-
-    aviso.estado_id_estado = obtener_estado(db, "PAGADO").id_estado
+    aplicar_pago(db, aviso, pago)
     return pago
 
 
@@ -473,6 +481,7 @@ def detalle_aviso(db: Session, aviso: models.Aviso) -> dict:
             "monto_pagado": pago.monto_pagado,
             "forma_pago": pago.forma_pago,
             "id_factura": pago.id_factura,
+            "factura_url": pago.factura_url,
         } if pago else None,
     }
 

@@ -68,6 +68,8 @@ def configurar_base_datos() -> None:
     if engine.dialect.name != "postgresql":
         return
     with engine.begin() as conexion:
+        # Columnas agregadas despues de crear la tabla (create_all no altera tablas existentes)
+        conexion.execute(text("ALTER TABLE pago ADD COLUMN IF NOT EXISTS factura_url varchar(500)"))
         for tabla in models.Base.metadata.tables:
             conexion.execute(text(f'ALTER TABLE "{tabla}" ENABLE ROW LEVEL SECURITY'))
         conexion.execute(text("""
