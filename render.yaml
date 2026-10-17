@@ -15,5 +15,5 @@ services:
         value: admin
       - key: ADMIN_CLAVE
         sync: false
-      - key: CORS_ORIGENES
-        value: "*"
+      - key: CORS_ORIGENES # solo los dos frontends de Vercel pueden llamar a la API
+        value: "https://cospabi-mvp-frontend.vercel.app,https://cospabi-socio.vercel.app"

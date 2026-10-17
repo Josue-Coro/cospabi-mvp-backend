@@ -56,7 +56,13 @@ Ver `.env.example`. El archivo `.env` real nunca se sube al repositorio.
    o **New → Web Service** con runtime **Docker**.
 2. Variables: `DATABASE_URL` (cadena del *Session pooler* de Supabase), `ADMIN_CLAVE`;
    `SECRET_KEY` se genera sola con el Blueprint.
-3. Cuando Vercel tenga las URLs de los frontends, poner `CORS_ORIGENES` con ellas separadas por comas.
+3. `CORS_ORIGENES` (en `render.yaml`) solo permite los dos frontends de Vercel.
+
+URLs desplegadas:
+
+- API: https://cospabi-mvp-backend.onrender.com (documentación en `/docs`)
+- Panel administrativo: https://cospabi-mvp-frontend.vercel.app
+- Portal del socio: https://cospabi-socio.vercel.app
 
 El plan gratuito de Render apaga el servicio tras 15 minutos sin uso: la primera
 petición después tarda unos segundos en responder.
