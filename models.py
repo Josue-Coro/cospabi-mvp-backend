@@ -237,9 +237,9 @@ class Socio(Base):
     fecha_consentimiento = Column(DateTime)
 
     persona = relationship("Persona")
-    rol_socio = relationship("RolSocio")
-    medidor = relationship("Medidor")
-    ruta = relationship("Ruta")
+    rol_socio = relationship("RolSocio", lazy="joined")
+    medidor = relationship("Medidor", lazy="joined")
+    ruta = relationship("Ruta", lazy="joined")
 
 
 class CreditoInscripcion(Base):
@@ -261,8 +261,8 @@ class CreditoInscripcion(Base):
     periodo_id_periodo = Column(Integer, ForeignKey("periodo.id_periodo"), nullable=False)
     pago_id_pago = Column(Integer, ForeignKey("pago.id_pago"))
 
-    socio = relationship("Socio")
-    periodo = relationship("Periodo")
+    socio = relationship("Socio", lazy="joined")
+    periodo = relationship("Periodo", lazy="joined")
 
 
 class CuentaSocio(Base):
@@ -343,10 +343,11 @@ class Aviso(Base):
     motivo_anulacion = Column(String(255))
     fecha_anulacion = Column(DateTime)
 
-    periodo = relationship("Periodo")
-    estado = relationship("Estado")
-    lectura = relationship("Lectura")
-    socio = relationship("Socio")
+    # Se cargan en la misma consulta (joined) para que listar avisos no haga una consulta por fila
+    periodo = relationship("Periodo", lazy="joined")
+    estado = relationship("Estado", lazy="joined")
+    lectura = relationship("Lectura", lazy="joined")
+    socio = relationship("Socio", lazy="joined")
 
 
 class CargoExtra(Base):
@@ -375,9 +376,9 @@ class CargoExtra(Base):
     fecha_anulacion = Column(DateTime)
     pago_id_pago = Column(Integer, ForeignKey("pago.id_pago"))
 
-    tipo_cargo = relationship("TipoCargo")
-    socio = relationship("Socio")
-    periodo = relationship("Periodo")
+    tipo_cargo = relationship("TipoCargo", lazy="joined")
+    socio = relationship("Socio", lazy="joined")
+    periodo = relationship("Periodo", lazy="joined")
 
 
 # ============================= COBRANZA =============================
@@ -416,10 +417,10 @@ class Pago(Base):
     qr_url = Column(String(500))
     estado_pago = Column(String(30), nullable=False, server_default="APROBADO")
 
-    aviso = relationship("Aviso")
-    metodo_pago = relationship("MetodoPago")
+    aviso = relationship("Aviso", lazy="joined")
+    metodo_pago = relationship("MetodoPago", lazy="joined")
     caja = relationship("Caja")
-    factura = relationship("Factura", back_populates="pago", uselist=False)
+    factura = relationship("Factura", back_populates="pago", uselist=False, lazy="joined")
 
     @property
     def id_factura(self):

@@ -4,6 +4,7 @@ services:
     name: cospabi-mvp-backend
     runtime: docker
     plan: free
+    region: virginia # misma zona que Supabase (us-east-1): consultas mucho mas rapidas
     healthCheckPath: /
     envVars:
       - key: DATABASE_URL
