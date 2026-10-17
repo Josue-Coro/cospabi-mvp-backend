@@ -83,7 +83,20 @@ def aviso_del_socio(db: Session, socio: models.Socio, id_aviso: int) -> models.A
 def ver_mi_aviso(
     id_aviso: int, socio: models.Socio = Depends(socio_actual), db: Session = Depends(get_db)
 ):
-    return detalle_aviso(db, aviso_del_socio(db, socio, id_aviso))
+    """Detalle del aviso. Si tiene un pago con QR pendiente, primero se consulta a Libélula
+    (por ejemplo, cuando el socio vuelve de la pasarela antes de que llegue el callback)."""
+    aviso = aviso_del_socio(db, socio, id_aviso)
+    pendiente = (
+        db.query(models.Pago)
+        .filter(models.Pago.aviso_id_aviso == aviso.id_aviso, models.Pago.estado_pago == "PENDIENTE")
+        .order_by(models.Pago.id_pago.desc())
+        .first()
+    )
+    if pendiente:
+        confirmar_pago_qr(db, pendiente.id_pago)
+        db.refresh(aviso)
+    return {**detalle_aviso(db, aviso), "pago_qr_pendiente": pago_qr_a_salida(pendiente) if pendiente
+            and pendiente.estado_pago == "PENDIENTE" else None}
 
 
 @router.get("/pagos")
