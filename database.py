@@ -1,8 +1,9 @@
 """Conexion a la base de datos PostgreSQL de Supabase."""
 import os
+import re
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Lee las variables del archivo .env
@@ -24,6 +25,21 @@ for prefijo in ("postgresql://", "postgres://"):
 
 # pool_pre_ping revisa que la conexion siga viva antes de usarla
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+# Opcional: trabajar en otro esquema (por ejemplo para pruebas) sin tocar "public"
+ESQUEMA = os.getenv("DB_ESQUEMA")
+if ESQUEMA:
+    if not re.fullmatch(r"[a-z_][a-z0-9_]{0,40}", ESQUEMA):
+        raise RuntimeError("DB_ESQUEMA solo admite minusculas, numeros y guion bajo")
+
+    @event.listens_for(engine, "connect")
+    def usar_esquema(conexion, _registro):
+        cursor = conexion.cursor()
+        cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{ESQUEMA}"')
+        cursor.execute(f'SET search_path TO "{ESQUEMA}"')
+        cursor.close()
+        conexion.commit()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

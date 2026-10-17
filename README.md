@@ -50,6 +50,9 @@ Usuarios de demostración (cambiarlos en un sistema real):
 
 Ver `.env.example`. El archivo `.env` real nunca se sube al repositorio.
 
+Para probar sin tocar los datos reales, `DB_ESQUEMA=prueba` hace que la API use otro
+esquema de la misma base (se crea solo); luego se borra con `DROP SCHEMA prueba CASCADE`.
+
 ## Despliegue en Render (Docker)
 
 1. En Render: **New → Blueprint** y elegir este repositorio (usa `render.yaml`),
