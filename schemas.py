@@ -38,6 +38,53 @@ class UsuarioOut(BaseModel):
     rol: str
 
 
+class RolOut(Salida):
+    id_rol: int
+    nombre: str
+    descripcion: Optional[str]
+    estado: bool
+
+
+class UsuarioIn(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=255)
+    apellido: str = Field(..., min_length=2, max_length=255)
+    usuario: str = Field(..., pattern=r"^[a-zA-Z0-9_.]{3,50}$", description="Sin espacios")
+    contrasena: str = Field(..., min_length=6, max_length=100)
+    rol_id_rol: int = Field(..., description="1 = Administrador, 2 = Cajero, 3 = Plomero")
+    correo: Optional[str] = Field(None, max_length=150)
+
+
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=2, max_length=255)
+    apellido: Optional[str] = Field(None, min_length=2, max_length=255)
+    rol_id_rol: Optional[int] = None
+    correo: Optional[str] = Field(None, max_length=150)
+    estado: Optional[bool] = Field(None, description="False = dar de baja (sin borrar)")
+
+
+class ClaveIn(BaseModel):
+    contrasena: str = Field(..., min_length=6, max_length=100)
+
+
+class UsuarioDetalleOut(Salida):
+    id_usuario_admin: int
+    nombre: str
+    apellido: str
+    usuario: str
+    correo: Optional[str]
+    estado: bool
+    fecha_creacion: date
+    rol_id_rol: int
+    rol: RolOut
+
+
+class BitacoraOut(BaseModel):
+    id_bitacora: int
+    fecha_hora: datetime
+    usuario: str
+    accion: str
+
+
 class CajaAbrirIn(BaseModel):
     monto_apertura: float = Field(0, ge=0, description="Efectivo inicial en Bs")
 
@@ -120,6 +167,27 @@ class PeriodoOut(Salida):
     costo_inscripcion: Optional[float]
 
 
+class TipoCargoIn(BaseModel):
+    nombre: str = Field(..., min_length=3, max_length=150, examples=["Multa por atraso"])
+    descripcion: Optional[str] = Field(None, max_length=255)
+    monto: float = Field(..., ge=0, description="Monto por defecto en Bs")
+
+
+class TipoCargoUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=3, max_length=150)
+    descripcion: Optional[str] = Field(None, max_length=255)
+    monto: Optional[float] = Field(None, ge=0)
+    estado: Optional[bool] = Field(None, description="False = desactivar")
+
+
+class TipoCargoOut(Salida):
+    id_tipo: int
+    nombre: str
+    descripcion: Optional[str]
+    monto: float
+    estado: bool
+
+
 # ======================== ATENCION AL CLIENTE ========================
 class PersonaIn(BaseModel):
     nombre_completo: str = Field(..., min_length=3, max_length=250)
@@ -164,6 +232,9 @@ class SocioIn(BaseModel):
     num_ocupantes: Optional[int] = Field(None, ge=0, le=50)
     tipo_instalacion: Optional[TipoInstalacion] = None
     dim_instalacion: Optional[DimInstalacion] = None
+    generar_credito: bool = Field(
+        True, description="Solo para socios: genera las 4 cuotas del crédito de inscripción"
+    )
 
 
 class SocioUpdate(BaseModel):
@@ -207,7 +278,40 @@ class SocioOut(Salida):
     motivo_baja: Optional[str]
 
 
-class PagoIn(BaseModel):
+class CuotaOut(Salida):
+    id_credito: int
+    num_cuota: int
+    monto_pago: float
+    estado: str
+    periodo: str
+    pago_id_pago: Optional[int]
+
+
+class CuentaSocioIn(BaseModel):
+    contrasena: str = Field(..., min_length=6, max_length=100, description="Contraseña temporal")
+
+
+class CuentaSocioEstadoIn(BaseModel):
+    estado: bool = Field(..., description="True = habilitada, False = bloqueada")
+
+
+class CuentaSocioOut(Salida):
+    id_cuenta_socio: int
+    usuario: str
+    estado: bool
+    ultimo_acceso: Optional[datetime]
+    socio_id_socio: int
+
+
+class DatosFactura(BaseModel):
+    """Datos que se piden cuando el socio quiere factura."""
+
+    con_factura: bool = Field(False, description="¿Desea factura?")
+    nit_ci: Optional[str] = Field(None, pattern=r"^[0-9A-Za-z-]{3,20}$", description="NIT o CI")
+    razon_social: Optional[str] = Field(None, min_length=2, max_length=255)
+
+
+class PagoIn(DatosFactura):
     aviso_id_aviso: int
     metodo_pago_id_metodo_pago: int = Field(..., description="1 = Efectivo, 2 = QR, 3 = Transferencia")
     monto_recibido: Optional[float] = Field(
@@ -222,9 +326,11 @@ class PagoOut(Salida):
     vuelto: Optional[float]
     cajero: str
     estado_pago: str
+    forma_pago: Optional[str]
     aviso_id_aviso: Optional[int]
     metodo_pago_id_metodo_pago: int
     caja_id_caja: Optional[int]
+    id_factura: Optional[int]
 
 
 # ============================ OPERACIONES ============================
@@ -267,6 +373,43 @@ class AvisoGenerarIn(BaseModel):
     lectura_id_lectura: int
 
 
+class AvisosPeriodoIn(BaseModel):
+    periodo_id_periodo: int
+
+
+class AvisosPeriodoOut(BaseModel):
+    generados: int
+    omitidos: list[str] = Field(description="Lecturas sin aviso y el motivo")
+
+
+class AnularIn(BaseModel):
+    motivo: str = Field(..., min_length=3, max_length=255)
+
+
+class CargoExtraIn(BaseModel):
+    socio_id_socio: int
+    tipo_cargo_id_tipo: int
+    periodo_id_periodo: int
+    monto: Optional[float] = Field(None, gt=0, description="Si se omite se usa el monto del tipo")
+    descripcion: Optional[str] = Field(
+        None, max_length=150, description="Si se omite se usa el nombre del tipo"
+    )
+
+
+class CargoExtraOut(BaseModel):
+    id_cargo_extra: int
+    socio_id_socio: int
+    codigo_fijo: int
+    nombre_socio: str
+    tipo: str
+    periodo: str
+    descripcion: str
+    monto: float
+    estado: str
+    fecha_registro: date
+    motivo_anulacion: Optional[str]
+
+
 class AvisoOut(BaseModel):
     id_aviso: int
     periodo: str
@@ -280,3 +423,25 @@ class AvisoOut(BaseModel):
     fecha_vencimiento: date
     socio_id_socio: int
     lectura_id_lectura: Optional[int]
+
+
+# ============================ FACTURACION ============================
+class FacturaOut(Salida):
+    id_factura: int
+    numero_factura: int
+    fecha_emision: datetime
+    nit_ci: str
+    razon_social: str
+    monto_total: float
+    cuf: str
+    codigo_control: str
+    leyenda: str
+    estado: str
+    pago_id_pago: int
+
+
+# =========================== PORTAL DEL SOCIO ===========================
+class SocioPortalOut(BaseModel):
+    id_socio: int
+    codigo_fijo: int
+    nombre_socio: str

@@ -1,7 +1,8 @@
 """Modelos SQLAlchemy de COSPABI R.L.
 
-Son 15 de las 24 tablas del script BD_COSPABI.sql, con los mismos nombres de
-tablas y columnas. Cubren el flujo principal: socio -> lectura -> aviso -> pago.
+Tablas del script BD_COSPABI.sql con los mismos nombres de tablas y columnas,
+mas la tabla factura (facturacion simulada del MVP). Cubren los 6 modulos:
+socio -> lectura -> aviso (consumo + cargos extra + cuota de inscripcion) -> pago.
 """
 from sqlalchemy import (
     Boolean,
@@ -80,6 +81,21 @@ class Caja(Base):
     usuario_admin = relationship("UsuarioAdmin")
 
 
+class Bitacora(Base):
+    """Historial de acciones. Un trigger en PostgreSQL impide editar o borrar filas."""
+
+    __tablename__ = "bitacora"
+
+    id_bitacora = Column(Integer, Identity(), primary_key=True)
+    accion = Column(String(255), nullable=False)
+    fecha_hora = Column(DateTime, nullable=False)
+    usuario_admin_id_usuario_admin = Column(
+        Integer, ForeignKey("usuario_admin.id_usuario_admin"), nullable=False
+    )
+
+    usuario_admin = relationship("UsuarioAdmin")
+
+
 # =========================== CONFIGURACION ===========================
 class RolSocio(Base):
     __tablename__ = "rol_socio"
@@ -126,6 +142,22 @@ class Periodo(Base):
     id_periodo = Column(Integer, Identity(), primary_key=True)
     periodo = Column(String(50), nullable=False)  # formato MM/yyyy, ej. 10/2026
     costo_inscripcion = Column(Numeric(10, 2))
+
+
+class TipoCargo(Base):
+    """Catalogo de conceptos adicionales: multas, reconexion, etc."""
+
+    __tablename__ = "tipo_cargo"
+    __table_args__ = (
+        UniqueConstraint("nombre", name="tipo_cargo_nombre_uq"),
+        CheckConstraint("monto >= 0", name="tipo_cargo_monto_ck"),
+    )
+
+    id_tipo = Column(Integer, Identity(), primary_key=True)
+    nombre = Column(String(150), nullable=False)
+    descripcion = Column(String(255))
+    monto = Column(Numeric(30, 2), nullable=False)
+    estado = Column(Boolean, nullable=False, server_default=text("true"))
 
 
 # ======================== ATENCION AL CLIENTE ========================
@@ -210,6 +242,49 @@ class Socio(Base):
     ruta = relationship("Ruta")
 
 
+class CreditoInscripcion(Base):
+    """Cuotas del derecho de inscripcion (1.700 Bs en 4 cuotas de 425 Bs)."""
+
+    __tablename__ = "credito_inscripcion"
+    __table_args__ = (
+        UniqueConstraint("socio_id_socio", "num_cuota", name="credito_socio_cuota_uq"),
+        CheckConstraint("num_cuota BETWEEN 1 AND 4", name="credito_num_cuota_ck"),
+        CheckConstraint("monto_pago > 0", name="credito_monto_ck"),
+        CheckConstraint("estado IN ('PENDIENTE', 'PAGADA')", name="credito_estado_ck"),
+    )
+
+    id_credito = Column(Integer, Identity(), primary_key=True)
+    monto_pago = Column(Numeric(10, 2), nullable=False)
+    estado = Column(String(50), nullable=False)
+    num_cuota = Column(Integer, nullable=False)
+    socio_id_socio = Column(Integer, ForeignKey("socio.id_socio"), nullable=False)
+    periodo_id_periodo = Column(Integer, ForeignKey("periodo.id_periodo"), nullable=False)
+    pago_id_pago = Column(Integer, ForeignKey("pago.id_pago"))
+
+    socio = relationship("Socio")
+    periodo = relationship("Periodo")
+
+
+class CuentaSocio(Base):
+    """Acceso del socio al portal. El usuario es su codigo fijo."""
+
+    __tablename__ = "cuenta_socio"
+    __table_args__ = (
+        UniqueConstraint("usuario", name="cuenta_socio_usuario_uq"),
+        UniqueConstraint("socio_id_socio", name="cuenta_socio_socio_uq"),
+    )
+
+    id_cuenta_socio = Column(Integer, Identity(), primary_key=True)
+    usuario = Column(String(150), nullable=False)
+    contrasena = Column("contraseña", String(500), nullable=False)
+    ultimo_acceso = Column(DateTime)
+    estado = Column(Boolean, nullable=False)
+    socio_id_socio = Column(Integer, ForeignKey("socio.id_socio"), nullable=False)
+    intentos_fallidos = Column(Integer, nullable=False, server_default=text("0"))
+
+    socio = relationship("Socio")
+
+
 # ============================ OPERACIONES ============================
 class Estado(Base):
     __tablename__ = "estado"
@@ -274,6 +349,37 @@ class Aviso(Base):
     socio = relationship("Socio")
 
 
+class CargoExtra(Base):
+    """Cargo de un socio en un periodo; se suma al aviso de ese periodo."""
+
+    __tablename__ = "cargo_extra"
+    __table_args__ = (
+        CheckConstraint("monto > 0", name="cargo_extra_monto_ck"),
+        CheckConstraint(
+            "estado IN ('PENDIENTE', 'APLICADO', 'ANULADO')", name="cargo_extra_estado_ck"
+        ),
+        CheckConstraint(
+            "estado <> 'ANULADO' OR motivo_anulacion IS NOT NULL", name="cargo_extra_anulacion_ck"
+        ),
+    )
+
+    id_cargo_extra = Column(Integer, Identity(), primary_key=True)
+    monto = Column(Numeric(30, 2), nullable=False)
+    descripcion = Column(String(150), nullable=False)
+    fecha_registro = Column(Date, nullable=False)
+    estado = Column(String(150), nullable=False)  # PENDIENTE / APLICADO (pagado) / ANULADO
+    tipo_cargo_id_tipo = Column(Integer, ForeignKey("tipo_cargo.id_tipo"), nullable=False)
+    socio_id_socio = Column(Integer, ForeignKey("socio.id_socio"), nullable=False)
+    periodo_id_periodo = Column(Integer, ForeignKey("periodo.id_periodo"), nullable=False)
+    motivo_anulacion = Column(String(255))
+    fecha_anulacion = Column(DateTime)
+    pago_id_pago = Column(Integer, ForeignKey("pago.id_pago"))
+
+    tipo_cargo = relationship("TipoCargo")
+    socio = relationship("Socio")
+    periodo = relationship("Periodo")
+
+
 # ============================= COBRANZA =============================
 class MetodoPago(Base):
     __tablename__ = "metodo_pago"
@@ -313,3 +419,38 @@ class Pago(Base):
     aviso = relationship("Aviso")
     metodo_pago = relationship("MetodoPago")
     caja = relationship("Caja")
+    factura = relationship("Factura", back_populates="pago", uselist=False)
+
+    @property
+    def id_factura(self):
+        return self.factura.id_factura if self.factura else None
+
+
+# ============================ FACTURACION ============================
+class Factura(Base):
+    """Factura simulada del MVP: tiene los datos de una factura del SIAT, pero
+    no se envia a Impuestos Nacionales. Se emite al cobrar si el socio la pide."""
+
+    __tablename__ = "factura"
+    __table_args__ = (
+        UniqueConstraint("numero_factura", name="factura_numero_uq"),
+        UniqueConstraint("pago_id_pago", name="factura_pago_uq"),
+        CheckConstraint("monto_total >= 0", name="factura_monto_ck"),
+        CheckConstraint("estado IN ('VIGENTE', 'ANULADA')", name="factura_estado_ck"),
+    )
+
+    id_factura = Column(Integer, Identity(), primary_key=True)
+    numero_factura = Column(Integer, nullable=False)
+    fecha_emision = Column(DateTime, nullable=False)
+    nit_ci = Column(String(20), nullable=False)
+    razon_social = Column(String(255), nullable=False)
+    monto_total = Column(Numeric(30, 2), nullable=False)
+    cuf = Column(String(100), nullable=False)  # codigo unico de factura (simulado)
+    codigo_control = Column(String(30), nullable=False)
+    leyenda = Column(String(500), nullable=False)
+    estado = Column(String(20), nullable=False, server_default="VIGENTE")
+    pago_id_pago = Column(Integer, ForeignKey("pago.id_pago"), nullable=False)
+    # Nulo cuando el pago se hizo desde el portal del socio
+    usuario_admin_id_usuario_admin = Column(Integer, ForeignKey("usuario_admin.id_usuario_admin"))
+
+    pago = relationship("Pago", back_populates="factura")

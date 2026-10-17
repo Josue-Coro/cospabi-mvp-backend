@@ -1,6 +1,7 @@
-"""Modulo de Administracion: inicio de sesion y caja."""
+"""Modulo de Administracion: inicio de sesion, usuarios, roles, caja y bitacora."""
+from datetime import date, datetime, time
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -9,8 +10,15 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from database import get_db
-from reglas import ahora, hoy
-from seguridad import crear_token, usuario_actual, verificar_contrasena
+from reglas import ahora, hoy, registrar_bitacora
+from seguridad import (
+    CAJERO,
+    cifrar_contrasena,
+    crear_token,
+    requiere_rol,
+    usuario_actual,
+    verificar_contrasena,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -34,6 +42,7 @@ def iniciar_sesion(datos: schemas.LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Usuario desactivado")
 
     usuario.intentos_fallidos = 0
+    registrar_bitacora(db, usuario, "Inició sesión")
     db.commit()
     return {
         "access_token": crear_token(usuario),
@@ -55,6 +64,142 @@ def ver_mi_usuario(usuario: models.UsuarioAdmin = Depends(usuario_actual)):
     }
 
 
+# ------------------------------- Usuarios -------------------------------
+def buscar_usuario(db: Session, id_usuario: int) -> models.UsuarioAdmin:
+    usuario = db.get(models.UsuarioAdmin, id_usuario)
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return usuario
+
+
+def validar_rol(db: Session, id_rol: int) -> None:
+    if db.get(models.Rol, id_rol) is None:
+        raise HTTPException(status_code=404, detail="Rol no encontrado")
+
+
+@router.get("/roles", response_model=List[schemas.RolOut], tags=["Usuarios"],
+            dependencies=[Depends(requiere_rol())])
+def listar_roles(db: Session = Depends(get_db)):
+    """HU3: perfiles de acceso del sistema (Administrador, Cajero, Plomero)."""
+    return db.query(models.Rol).order_by(models.Rol.id_rol).all()
+
+
+@router.get("/usuarios", response_model=List[schemas.UsuarioDetalleOut], tags=["Usuarios"],
+            dependencies=[Depends(requiere_rol())])
+def listar_usuarios(q: Optional[str] = None, db: Session = Depends(get_db)):
+    """HU2: lista el personal. Con `q` busca por nombre, apellido o usuario."""
+    consulta = db.query(models.UsuarioAdmin)
+    if q:
+        patron = f"%{q}%"
+        consulta = consulta.filter(
+            models.UsuarioAdmin.nombre.ilike(patron)
+            | models.UsuarioAdmin.apellido.ilike(patron)
+            | models.UsuarioAdmin.usuario.ilike(patron)
+        )
+    return consulta.order_by(models.UsuarioAdmin.id_usuario_admin).all()
+
+
+@router.post("/usuarios", response_model=schemas.UsuarioDetalleOut, status_code=201,
+             tags=["Usuarios"])
+def registrar_usuario(
+    datos: schemas.UsuarioIn,
+    db: Session = Depends(get_db),
+    admin: models.UsuarioAdmin = Depends(requiere_rol()),
+):
+    """HU2: registra un usuario del personal. No se permite repetir el nombre de usuario."""
+    if db.query(models.UsuarioAdmin).filter(models.UsuarioAdmin.usuario == datos.usuario).first():
+        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre de usuario")
+    validar_rol(db, datos.rol_id_rol)
+
+    usuario = models.UsuarioAdmin(
+        nombre=datos.nombre,
+        apellido=datos.apellido,
+        usuario=datos.usuario,
+        contrasena=cifrar_contrasena(datos.contrasena),
+        correo=datos.correo,
+        rol_id_rol=datos.rol_id_rol,
+        estado=True,
+        fecha_creacion=hoy(),
+    )
+    db.add(usuario)
+    db.flush()
+    registrar_bitacora(db, admin, f"Registró al usuario {usuario.usuario}")
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+
+@router.put("/usuarios/{id_usuario}", response_model=schemas.UsuarioDetalleOut,
+            tags=["Usuarios"])
+def editar_usuario(
+    id_usuario: int,
+    datos: schemas.UsuarioUpdate,
+    db: Session = Depends(get_db),
+    admin: models.UsuarioAdmin = Depends(requiere_rol()),
+):
+    """HU2/HU3: edita datos, cambia el rol o da de baja (estado = false) sin borrar."""
+    usuario = buscar_usuario(db, id_usuario)
+    cambios = datos.model_dump(exclude_unset=True, exclude_none=True)
+    if "rol_id_rol" in cambios:
+        validar_rol(db, cambios["rol_id_rol"])
+    if cambios.get("estado") is False and usuario.id_usuario_admin == admin.id_usuario_admin:
+        raise HTTPException(status_code=400, detail="No puede darse de baja a sí mismo")
+
+    for campo, valor in cambios.items():
+        setattr(usuario, campo, valor)
+    registrar_bitacora(db, admin, f"Editó al usuario {usuario.usuario}")
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+
+@router.post("/usuarios/{id_usuario}/clave", response_model=schemas.UsuarioDetalleOut,
+             tags=["Usuarios"])
+def cambiar_clave_usuario(
+    id_usuario: int,
+    datos: schemas.ClaveIn,
+    db: Session = Depends(get_db),
+    admin: models.UsuarioAdmin = Depends(requiere_rol()),
+):
+    """Restablece la contraseña de un usuario del personal."""
+    usuario = buscar_usuario(db, id_usuario)
+    usuario.contrasena = cifrar_contrasena(datos.contrasena)
+    usuario.intentos_fallidos = 0
+    registrar_bitacora(db, admin, f"Restableció la contraseña de {usuario.usuario}")
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+
+# ------------------------------- Bitacora -------------------------------
+@router.get("/bitacora", response_model=List[schemas.BitacoraOut], tags=["Bitácora"],
+            dependencies=[Depends(requiere_rol())])
+def ver_bitacora(
+    id_usuario: Optional[int] = None,
+    desde: Optional[date] = None,
+    hasta: Optional[date] = None,
+    db: Session = Depends(get_db),
+):
+    """HU6: historial de acciones; se filtra por usuario y fechas. Es de solo lectura."""
+    consulta = db.query(models.Bitacora).join(models.UsuarioAdmin)
+    if id_usuario is not None:
+        consulta = consulta.filter(models.Bitacora.usuario_admin_id_usuario_admin == id_usuario)
+    if desde:
+        consulta = consulta.filter(models.Bitacora.fecha_hora >= datetime.combine(desde, time.min))
+    if hasta:
+        consulta = consulta.filter(models.Bitacora.fecha_hora <= datetime.combine(hasta, time.max))
+    registros = consulta.order_by(models.Bitacora.id_bitacora.desc()).limit(500).all()
+    return [
+        {
+            "id_bitacora": r.id_bitacora,
+            "fecha_hora": r.fecha_hora,
+            "usuario": r.usuario_admin.usuario,
+            "accion": r.accion,
+        }
+        for r in registros
+    ]
+
+
 # -------------------------------- Caja --------------------------------
 def buscar_caja_abierta(db: Session, id_usuario: int):
     return (
@@ -71,7 +216,7 @@ def buscar_caja_abierta(db: Session, id_usuario: int):
 def abrir_caja(
     datos: schemas.CajaAbrirIn,
     db: Session = Depends(get_db),
-    usuario: models.UsuarioAdmin = Depends(usuario_actual),
+    usuario: models.UsuarioAdmin = Depends(requiere_rol(CAJERO)),
 ):
     """HU5: abre la caja del usuario. La fecha y la hora se toman del servidor."""
     if buscar_caja_abierta(db, usuario.id_usuario_admin):
@@ -85,6 +230,7 @@ def abrir_caja(
         monto_apertura=Decimal(str(datos.monto_apertura)),
     )
     db.add(caja)
+    registrar_bitacora(db, usuario, f"Abrió caja con {datos.monto_apertura:.2f} Bs")
     db.commit()
     db.refresh(caja)
     return caja
@@ -92,7 +238,7 @@ def abrir_caja(
 
 @router.get("/caja/actual", response_model=schemas.CajaOut, tags=["Caja"])
 def ver_caja_actual(
-    db: Session = Depends(get_db), usuario: models.UsuarioAdmin = Depends(usuario_actual)
+    db: Session = Depends(get_db), usuario: models.UsuarioAdmin = Depends(requiere_rol(CAJERO))
 ):
     caja = buscar_caja_abierta(db, usuario.id_usuario_admin)
     if caja is None:
@@ -104,7 +250,7 @@ def ver_caja_actual(
 def cerrar_caja(
     datos: schemas.CajaCerrarIn,
     db: Session = Depends(get_db),
-    usuario: models.UsuarioAdmin = Depends(usuario_actual),
+    usuario: models.UsuarioAdmin = Depends(requiere_rol(CAJERO)),
 ):
     """HU5: cierra la caja con arqueo.
 
@@ -144,6 +290,10 @@ def cerrar_caja(
     caja.observacion_cierre = datos.observacion_cierre
     caja.hora_cierre = ahora()
     caja.estado = False
+    registrar_bitacora(
+        db, usuario, f"Cerró caja N° {caja.id_caja}: cobrado {caja.monto_cobrado:.2f} Bs, "
+                     f"diferencia {diferencia:.2f} Bs"
+    )
     db.commit()
     db.refresh(caja)
     return caja
@@ -153,7 +303,8 @@ def cerrar_caja(
     "/cajas",
     response_model=List[schemas.CajaOut],
     tags=["Caja"],
-    dependencies=[Depends(usuario_actual)],
+    dependencies=[Depends(requiere_rol(CAJERO))],
 )
 def listar_cajas(db: Session = Depends(get_db)):
     return db.query(models.Caja).order_by(models.Caja.id_caja.desc()).all()
+

@@ -42,7 +42,46 @@ CATALOGOS = [
         {"id_metodo_pago": 2, "metodo": "QR"},
         {"id_metodo_pago": 3, "metodo": "Transferencia"},
     ]),
+    # Conceptos del Modelo de Dominio; los montos son de ejemplo y se editan en Configuracion
+    (models.TipoCargo, "id_tipo", [
+        {"id_tipo": 1, "nombre": "Multa por inasistencia a reunión", "monto": 20, "estado": True,
+         "descripcion": "Falta a reunión o asamblea de socios"},
+        {"id_tipo": 2, "nombre": "Multa por atraso", "monto": 10, "estado": True,
+         "descripcion": "Pago fuera de plazo"},
+        {"id_tipo": 3, "nombre": "Reconexión", "monto": 50, "estado": True,
+         "descripcion": "Reconexión del servicio tras un corte"},
+        {"id_tipo": 4, "nombre": "Tasa AFCOOP", "monto": 2, "estado": True,
+         "descripcion": "Aporte a la Autoridad de Fiscalización de Cooperativas"},
+        {"id_tipo": 5, "nombre": "Baja de medidor", "monto": 50, "estado": True,
+         "descripcion": "50 Bs por año de medidor dado de baja"},
+    ]),
 ]
+
+
+def configurar_base_datos() -> None:
+    """Ajustes de seguridad de PostgreSQL que create_all no hace.
+
+    - Activa RLS en todas las tablas para que la API publica de Supabase no las
+      exponga (FastAPI se conecta como postgres y no se ve afectado).
+    - Crea un trigger que impide modificar o borrar la bitacora (RNF-08).
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conexion:
+        for tabla in models.Base.metadata.tables:
+            conexion.execute(text(f'ALTER TABLE "{tabla}" ENABLE ROW LEVEL SECURITY'))
+        conexion.execute(text("""
+            CREATE OR REPLACE FUNCTION bitacora_solo_lectura() RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'La bitácora no se puede modificar ni eliminar';
+            END;
+            $$ LANGUAGE plpgsql
+        """))
+        conexion.execute(text("""
+            CREATE OR REPLACE TRIGGER bitacora_solo_lectura_tg
+            BEFORE UPDATE OR DELETE ON bitacora
+            FOR EACH ROW EXECUTE FUNCTION bitacora_solo_lectura()
+        """))
 
 
 def cargar_datos_iniciales() -> None:

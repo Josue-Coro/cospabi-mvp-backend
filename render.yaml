@@ -1,0 +1,18 @@
+# Blueprint de Render: crea el servicio web de la API a partir del Dockerfile
+services:
+  - type: web
+    name: cospabi-mvp-backend
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false # cadena del Session pooler de Supabase (se pega en el panel de Render)
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_USUARIO
+        value: admin
+      - key: ADMIN_CLAVE
+        sync: false
+      - key: CORS_ORIGENES
+        value: "*"

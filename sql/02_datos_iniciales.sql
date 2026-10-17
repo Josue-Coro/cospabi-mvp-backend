@@ -26,16 +26,26 @@ INSERT INTO metodo_pago (id_metodo_pago, metodo) VALUES
     (2, 'QR'),
     (3, 'Transferencia');
 
+-- Conceptos de cobro adicional; los montos son de ejemplo y se editan en Configuracion.
+INSERT INTO tipo_cargo (id_tipo, nombre, descripcion, monto, estado) VALUES
+    (1, 'Multa por inasistencia a reunión', 'Falta a reunión o asamblea de socios', 20, true),
+    (2, 'Multa por atraso', 'Pago fuera de plazo', 10, true),
+    (3, 'Reconexión', 'Reconexión del servicio tras un corte', 50, true),
+    (4, 'Tasa AFCOOP', 'Aporte a la Autoridad de Fiscalización de Cooperativas', 2, true),
+    (5, 'Baja de medidor', '50 Bs por año de medidor dado de baja', 50, true);
+
 -- Ajusta los contadores para que los proximos registros no choquen con estos ids.
 SELECT setval(pg_get_serial_sequence('rol', 'id_rol'), 3);
 SELECT setval(pg_get_serial_sequence('rol_socio', 'id_rol_socio'), 2);
 SELECT setval(pg_get_serial_sequence('tarifa', 'id_tarifa'), 2);
 SELECT setval(pg_get_serial_sequence('estado', 'id_estado'), 5);
 SELECT setval(pg_get_serial_sequence('metodo_pago', 'id_metodo_pago'), 3);
+SELECT setval(pg_get_serial_sequence('tipo_cargo', 'id_tipo'), 5);
 
 -- Verificacion: cuantas filas quedaron en cada catalogo.
 SELECT 'rol' AS tabla, count(*) AS filas FROM rol
 UNION ALL SELECT 'rol_socio', count(*) FROM rol_socio
 UNION ALL SELECT 'tarifa', count(*) FROM tarifa
 UNION ALL SELECT 'estado', count(*) FROM estado
-UNION ALL SELECT 'metodo_pago', count(*) FROM metodo_pago;
+UNION ALL SELECT 'metodo_pago', count(*) FROM metodo_pago
+UNION ALL SELECT 'tipo_cargo', count(*) FROM tipo_cargo;
