@@ -454,6 +454,12 @@ class PagoQrIn(DatosFactura):
     tipo_documento: Literal["CI", "NIT"] = Field("CI", description="Tipo de documento para la factura")
 
 
+class CobroQrIn(PagoQrIn):
+    """Cobro con QR en ventanilla (el cajero indica el aviso)."""
+
+    aviso_id_aviso: int
+
+
 class PagoQrOut(BaseModel):
     id_pago: int
     id_aviso: int

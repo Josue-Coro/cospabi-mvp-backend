@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from database import get_db
+from pagos_qr import ID_METODO_QR, confirmar_pago_qr, crear_pago_qr, pago_qr_a_salida
 from reglas import cobrar_aviso, emitir_factura, generar_credito_inscripcion, hoy, registrar_bitacora
 from routers.administracion import buscar_caja_abierta
 from seguridad import CAJERO, cifrar_contrasena, requiere_rol, usuario_actual
@@ -405,3 +406,40 @@ def registrar_pago(
     except Exception as error:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error en la transacción: {error}")
+
+
+@router.post("/pagos/qr", response_model=schemas.PagoQrOut, tags=["Pagos"])
+def generar_cobro_qr(
+    datos: schemas.CobroQrIn,
+    db: Session = Depends(get_db),
+    usuario: models.UsuarioAdmin = Depends(usuario_actual),
+):
+    """Cobro con QR en ventanilla: genera el QR de Libélula para que el socio lo escanee.
+
+    El pago queda PENDIENTE en la caja abierta del cajero y se registra solo cuando
+    Libélula lo confirma. Si el socio pide factura, la emite Libélula.
+    """
+    aviso = db.get(models.Aviso, datos.aviso_id_aviso)
+    if aviso is None:
+        raise HTTPException(status_code=404, detail="Aviso no encontrado")
+    caja = buscar_caja_abierta(db, usuario.id_usuario_admin)
+    if caja is None:
+        raise HTTPException(status_code=400, detail="Debe abrir una caja antes de cobrar")
+
+    pago = crear_pago_qr(
+        db, aviso, datos, cajero=f"{usuario.nombre} {usuario.apellido}", caja=caja, forma_pago="VENTANILLA",
+    )
+    registrar_bitacora(
+        db, usuario, f"Generó el QR de cobro del aviso N° {aviso.id_aviso} ({pago.monto_pagado:.2f} Bs)"
+    )
+    db.commit()
+    return pago_qr_a_salida(pago)
+
+
+@router.get("/pagos/qr/{id_pago}", response_model=schemas.PagoQrOut, tags=["Pagos"])
+def ver_cobro_qr(id_pago: int, db: Session = Depends(get_db)):
+    """Estado del cobro con QR; si sigue pendiente, se consulta a Libélula en ese momento."""
+    pago = db.get(models.Pago, id_pago)
+    if pago is None or pago.metodo_pago_id_metodo_pago != ID_METODO_QR:
+        raise HTTPException(status_code=404, detail="Cobro con QR no encontrado")
+    return pago_qr_a_salida(confirmar_pago_qr(db, id_pago))
