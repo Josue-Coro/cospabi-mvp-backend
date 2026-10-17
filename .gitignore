@@ -1,0 +1,9 @@
+# Entorno virtual de Python (se recrea con: python -m venv venv)
+venv/
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+
+# Contrasenas y claves: nunca se suben a GitHub
+.env
