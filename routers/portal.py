@@ -15,7 +15,14 @@ from pagos_qr import confirmar_pago_qr, crear_pago_qr, pago_qr_a_salida
 from reglas import actualizar_vencidos, ahora, detalle_aviso
 from routers.facturacion import detalle_factura
 from routers.operaciones import aviso_a_salida
-from seguridad import crear_token_socio, socio_actual, verificar_contrasena
+from seguridad import (
+    crear_token_socio,
+    desbloquear,
+    registrar_intento_fallido,
+    revisar_bloqueo,
+    socio_actual,
+    verificar_contrasena,
+)
 
 router = APIRouter(prefix="/api/v1/portal", tags=["Portal del Socio"])
 
@@ -28,14 +35,16 @@ def iniciar_sesion_socio(datos: schemas.LoginIn, db: Session = Depends(get_db)):
     )
     if cuenta is None:
         raise HTTPException(status_code=401, detail="Código fijo o contraseña incorrectos")
+    revisar_bloqueo(cuenta)
     if not verificar_contrasena(datos.contrasena, cuenta.contrasena):
-        cuenta.intentos_fallidos += 1
+        registrar_intento_fallido(cuenta)
         db.commit()
+        revisar_bloqueo(cuenta)
         raise HTTPException(status_code=401, detail="Código fijo o contraseña incorrectos")
     if not cuenta.estado:
         raise HTTPException(status_code=403, detail="Su cuenta está bloqueada; acérquese a la oficina")
 
-    cuenta.intentos_fallidos = 0
+    desbloquear(cuenta)
     cuenta.ultimo_acceso = ahora()
     db.commit()
     return {

@@ -76,6 +76,7 @@ class UsuarioDetalleOut(Salida):
     fecha_creacion: date
     rol_id_rol: int
     rol: RolOut
+    bloqueado_hasta: Optional[datetime] = None
 
 
 class BitacoraOut(BaseModel):
@@ -301,6 +302,7 @@ class CuentaSocioOut(Salida):
     estado: bool
     ultimo_acceso: Optional[datetime]
     socio_id_socio: int
+    bloqueado_hasta: Optional[datetime] = None
 
 
 class DatosFactura(BaseModel):

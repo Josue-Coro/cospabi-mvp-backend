@@ -13,9 +13,14 @@ from database import get_db
 from reglas import ahora, hoy, registrar_bitacora
 from seguridad import (
     CAJERO,
+    MAX_INTENTOS,
+    MINUTOS_BLOQUEO,
     cifrar_contrasena,
     crear_token,
+    desbloquear,
+    registrar_intento_fallido,
     requiere_rol,
+    revisar_bloqueo,
     usuario_actual,
     verificar_contrasena,
 )
@@ -32,16 +37,21 @@ def iniciar_sesion(datos: schemas.LoginIn, db: Session = Depends(get_db)):
     )
     if usuario is None:
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+    revisar_bloqueo(usuario)
 
     if not verificar_contrasena(datos.contrasena, usuario.contrasena):
-        usuario.intentos_fallidos += 1
+        if registrar_intento_fallido(usuario):
+            registrar_bitacora(
+                db, usuario, f"Cuenta bloqueada {MINUTOS_BLOQUEO} min por {MAX_INTENTOS} intentos fallidos"
+            )
         db.commit()
+        revisar_bloqueo(usuario)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
 
     if not usuario.estado:
         raise HTTPException(status_code=403, detail="Usuario desactivado")
 
-    usuario.intentos_fallidos = 0
+    desbloquear(usuario)
     registrar_bitacora(db, usuario, "Inició sesión")
     db.commit()
     return {
@@ -161,10 +171,10 @@ def cambiar_clave_usuario(
     db: Session = Depends(get_db),
     admin: models.UsuarioAdmin = Depends(requiere_rol()),
 ):
-    """Restablece la contraseña de un usuario del personal."""
+    """Restablece la contraseña de un usuario del personal (y lo desbloquea si estaba bloqueado)."""
     usuario = buscar_usuario(db, id_usuario)
     usuario.contrasena = cifrar_contrasena(datos.contrasena)
-    usuario.intentos_fallidos = 0
+    desbloquear(usuario)
     registrar_bitacora(db, admin, f"Restableció la contraseña de {usuario.usuario}")
     db.commit()
     db.refresh(usuario)

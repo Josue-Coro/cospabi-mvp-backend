@@ -282,6 +282,7 @@ CREATE TABLE cuenta_socio (
     estado             boolean NOT NULL,
     socio_id_socio     integer NOT NULL,
     intentos_fallidos  integer NOT NULL DEFAULT 0,
+    bloqueado_hasta    timestamp,
     CONSTRAINT cuenta_socio_pk PRIMARY KEY (id_cuenta_socio),
     CONSTRAINT cuenta_socio_usuario_uq UNIQUE (usuario),
     CONSTRAINT cuenta_socio_socio_uq UNIQUE (socio_id_socio),

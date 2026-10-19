@@ -12,7 +12,7 @@ from database import get_db
 from pagos_qr import ID_METODO_QR, confirmar_pago_qr, crear_pago_qr, pago_qr_a_salida
 from reglas import cobrar_aviso, emitir_factura, generar_credito_inscripcion, hoy, registrar_bitacora
 from routers.administracion import buscar_caja_abierta
-from seguridad import CAJERO, cifrar_contrasena, requiere_rol, usuario_actual
+from seguridad import CAJERO, cifrar_contrasena, desbloquear, requiere_rol, usuario_actual
 
 # Todo este modulo es para el Administrador y el Cajero
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(requiere_rol(CAJERO))])
@@ -315,7 +315,7 @@ def crear_cuenta_socio(
         accion = f"Creó la cuenta del portal del socio {socio.codigo_fijo}"
     else:
         cuenta.contrasena = cifrar_contrasena(datos.contrasena)
-        cuenta.intentos_fallidos = 0
+        desbloquear(cuenta)
         accion = f"Restableció la contraseña del portal del socio {socio.codigo_fijo}"
     registrar_bitacora(db, usuario, accion)
     db.commit()
@@ -331,9 +331,12 @@ def cambiar_estado_cuenta_socio(
     db: Session = Depends(get_db),
     usuario: models.UsuarioAdmin = Depends(usuario_actual),
 ):
-    """HU18: habilita o bloquea el acceso del socio al portal."""
+    """HU18: habilita o bloquea el acceso del socio al portal. Habilitar quita también el
+    bloqueo temporal por intentos fallidos."""
     cuenta = ver_cuenta_socio(id_socio, db)
     cuenta.estado = datos.estado
+    if datos.estado:
+        desbloquear(cuenta)
     registrar_bitacora(
         db, usuario, f"{'Habilitó' if datos.estado else 'Bloqueó'} la cuenta del portal {cuenta.usuario}"
     )

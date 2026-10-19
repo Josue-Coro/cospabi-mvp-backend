@@ -1,4 +1,5 @@
 """Seguridad: contrasenas cifradas con bcrypt, sesiones con tokens JWT y permisos por rol."""
+import math
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -10,10 +11,15 @@ from sqlalchemy.orm import Session
 
 import models
 from database import get_db
+from reglas import ahora
 
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 ALGORITHM = "HS256"
 HORAS_TOKEN = 2
+
+# Tras MAX_INTENTOS contrasenas erradas seguidas la cuenta se bloquea MINUTOS_BLOQUEO
+MAX_INTENTOS = 5
+MINUTOS_BLOQUEO = 15
 
 if len(SECRET_KEY) < 32:
     raise RuntimeError("Falta SECRET_KEY en el archivo .env (minimo 32 caracteres).")
@@ -36,6 +42,33 @@ def verificar_contrasena(contrasena: str, contrasena_cifrada: str) -> bool:
         return bcrypt.checkpw(contrasena.encode("utf-8"), contrasena_cifrada.encode("utf-8"))
     except ValueError:
         return False
+
+
+# Sirven para UsuarioAdmin y CuentaSocio: ambos tienen intentos_fallidos y bloqueado_hasta
+def revisar_bloqueo(cuenta) -> None:
+    """Rechaza el login si la cuenta sigue bloqueada, sin mirar la contrasena."""
+    if cuenta.bloqueado_hasta and cuenta.bloqueado_hasta > ahora():
+        minutos = math.ceil((cuenta.bloqueado_hasta - ahora()).total_seconds() / 60)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Cuenta bloqueada por intentos fallidos. Intente de nuevo en {minutos} min.",
+        )
+
+
+def registrar_intento_fallido(cuenta) -> bool:
+    """Suma un intento errado; al llegar al maximo bloquea la cuenta. Devuelve si se bloqueo."""
+    cuenta.intentos_fallidos += 1
+    if cuenta.intentos_fallidos < MAX_INTENTOS:
+        return False
+    # El contador vuelve a cero: al vencer el bloqueo hay otros MAX_INTENTOS
+    cuenta.intentos_fallidos = 0
+    cuenta.bloqueado_hasta = ahora() + timedelta(minutes=MINUTOS_BLOQUEO)
+    return True
+
+
+def desbloquear(cuenta) -> None:
+    cuenta.intentos_fallidos = 0
+    cuenta.bloqueado_hasta = None
 
 
 def _firmar(datos: dict) -> str:

@@ -281,6 +281,7 @@ class CuentaSocio(Base):
     estado = Column(Boolean, nullable=False)
     socio_id_socio = Column(Integer, ForeignKey("socio.id_socio"), nullable=False)
     intentos_fallidos = Column(Integer, nullable=False, server_default=text("0"))
+    bloqueado_hasta = Column(DateTime)
 
     socio = relationship("Socio")
 
