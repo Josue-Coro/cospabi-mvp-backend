@@ -142,12 +142,15 @@ def confirmar_pago_qr(db: Session, id_pago: int) -> models.Pago:
 
     Se bloquea la fila del pago para que el callback y las consultas del portal o de
     la caja no lo apliquen dos veces al mismo tiempo.
+
+    Un QR EXPIRADO aquí (reemplazado por otro, por ejemplo tras un doble clic) sigue
+    vigente en Libélula: si el socio igual lo pagó, el dinero se registra en vez de perderse.
     """
     # FOR UPDATE OF pago: las relaciones se cargan con LEFT JOIN y no se pueden bloquear
     pago = (
         db.query(models.Pago).filter(models.Pago.id_pago == id_pago).with_for_update(of=models.Pago).one()
     )
-    if pago.estado_pago != "PENDIENTE" or not pago.identificador_deuda:
+    if pago.estado_pago == "APROBADO" or not pago.identificador_deuda:
         db.commit()  # libera el bloqueo
         return pago
 

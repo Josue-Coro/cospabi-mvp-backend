@@ -10,7 +10,14 @@ import models
 import schemas
 from database import get_db
 from pagos_qr import ID_METODO_QR, confirmar_pago_qr, crear_pago_qr, pago_qr_a_salida
-from reglas import cobrar_aviso, emitir_factura, generar_credito_inscripcion, hoy, registrar_bitacora
+from reglas import (
+    bloquear_fila,
+    cobrar_aviso,
+    emitir_factura,
+    generar_credito_inscripcion,
+    hoy,
+    registrar_bitacora,
+)
 from routers.administracion import buscar_caja_abierta
 from seguridad import CAJERO, cifrar_contrasena, desbloquear, requiere_rol, usuario_actual
 
@@ -216,7 +223,8 @@ def dar_baja_socio(
     usuario: models.UsuarioAdmin = Depends(usuario_actual),
 ):
     """Baja logica del socio: guarda la fecha y el motivo."""
-    socio = buscar_socio(db, id_socio)
+    buscar_socio(db, id_socio)
+    socio = bloquear_fila(db, models.Socio, id_socio)
     if not socio.estado:
         raise HTTPException(status_code=400, detail="El socio ya está dado de baja")
     socio.estado = False
@@ -261,7 +269,8 @@ def generar_credito_socio(
     usuario: models.UsuarioAdmin = Depends(usuario_actual),
 ):
     """Genera el crédito de inscripción de un socio que no lo tiene (desde el mes actual)."""
-    socio = buscar_socio(db, id_socio)
+    buscar_socio(db, id_socio)
+    socio = bloquear_fila(db, models.Socio, id_socio)  # dos pedidos a la vez: el segundo ve las cuotas
     if socio.rol_socio_id_rol_socio != 1:
         raise HTTPException(status_code=400, detail="Solo los socios pagan inscripción, no los usuarios")
     existe = (
@@ -365,9 +374,10 @@ def registrar_pago(
     Reglas: requiere una caja abierta, el aviso debe estar pendiente o vencido, no
     puede haber un aviso anterior sin pagar del mismo socio y no hay pagos
     parciales. El pago, el cambio de estado del aviso, sus cargos, su cuota de
-    inscripción y la factura se guardan en una sola transacción.
+    inscripción y la factura se guardan en una sola transacción. El aviso queda
+    bloqueado hasta el commit: un segundo cobro simultáneo lo encuentra ya PAGADO.
     """
-    aviso = db.get(models.Aviso, datos.aviso_id_aviso)
+    aviso = bloquear_fila(db, models.Aviso, datos.aviso_id_aviso)
     if aviso is None:
         raise HTTPException(status_code=404, detail="Aviso no encontrado")
 
@@ -422,7 +432,7 @@ def generar_cobro_qr(
     El pago queda PENDIENTE en la caja abierta del cajero y se registra solo cuando
     Libélula lo confirma. Si el socio pide factura, la emite Libélula.
     """
-    aviso = db.get(models.Aviso, datos.aviso_id_aviso)
+    aviso = bloquear_fila(db, models.Aviso, datos.aviso_id_aviso)
     if aviso is None:
         raise HTTPException(status_code=404, detail="Aviso no encontrado")
     caja = buscar_caja_abierta(db, usuario.id_usuario_admin)

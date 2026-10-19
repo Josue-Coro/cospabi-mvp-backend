@@ -241,6 +241,8 @@ def crear_aviso(db: Session, lectura: models.Lectura, emision: date) -> models.A
     Usuario), suma los cargos extra y la cuota de inscripción del periodo y deja
     el aviso en estado PENDIENTE.
     """
+    # Dos generaciones a la vez de la misma lectura: la segunda espera y ve el aviso ya creado
+    bloquear_fila(db, models.Lectura, lectura.id_lectura)
     ya_existe = (
         db.query(models.Aviso)
         .join(models.Estado)
@@ -307,6 +309,23 @@ def actualizar_vencidos(db: Session) -> None:
     )
     if cambiados:
         db.commit()
+
+
+# ------------------------- Bloqueo de filas -------------------------
+def bloquear_fila(db: Session, modelo, id_fila: int):
+    """Lee la fila con SELECT ... FOR UPDATE y la deja bloqueada hasta el commit.
+
+    Si llegan dos pedidos iguales a la vez (doble clic, reintento, dos pestañas), el
+    segundo espera a que el primero termine y luego ve el estado ya actualizado, en
+    lugar de repetir la operacion (por ejemplo, cobrar dos veces el mismo aviso).
+    """
+    columna_id = modelo.__mapper__.primary_key[0]
+    # Se bloquea solo el id: si se bloqueara junto con las relaciones joined, al
+    # esperar a otro pedido PostgreSQL puede devolver esas relaciones vacias
+    if db.query(columna_id).filter(columna_id == id_fila).with_for_update().scalar() is None:
+        return None
+    # Con el bloqueo tomado se lee la fila completa de nuevo, ya con los cambios del otro pedido
+    return db.get(modelo, id_fila, populate_existing=True)
 
 
 # -------------------------------- Cobro --------------------------------

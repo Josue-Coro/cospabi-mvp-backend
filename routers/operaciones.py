@@ -12,6 +12,7 @@ from database import get_db
 from reglas import (
     actualizar_vencidos,
     ahora,
+    bloquear_fila,
     aviso_abierto,
     crear_aviso,
     detalle_aviso,
@@ -340,7 +341,8 @@ def anular_aviso(
 ):
     """Anula un aviso que no fue pagado (por ejemplo, una lectura mal tomada).
     Luego se puede volver a generar desde la misma lectura."""
-    aviso = buscar_aviso(db, id_aviso)
+    buscar_aviso(db, id_aviso)
+    aviso = bloquear_fila(db, models.Aviso, id_aviso)  # no anular un aviso que se está cobrando
     if aviso.estado.estado in ("PAGADO", "ANULADO"):
         raise HTTPException(status_code=400, detail=f"El aviso ya está {aviso.estado.estado}")
     aviso.estado_id_estado = obtener_estado(db, "ANULADO").id_estado
@@ -450,7 +452,8 @@ def anular_cargo_extra(
     usuario: models.UsuarioAdmin = Depends(requiere_rol(CAJERO)),
 ):
     """HU16: anula un cargo extra mientras el aviso no esté pagado; se resta del total."""
-    cargo = db.get(models.CargoExtra, id_cargo)
+    # Bloqueado: si a la vez se cobra el aviso, se espera y se ve el cargo ya APLICADO
+    cargo = bloquear_fila(db, models.CargoExtra, id_cargo)
     if cargo is None:
         raise HTTPException(status_code=404, detail="Cargo extra no encontrado")
     if cargo.estado != "PENDIENTE":

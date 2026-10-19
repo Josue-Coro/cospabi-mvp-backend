@@ -1,8 +1,10 @@
 """API de COSPABI R.L. - MVP de los 6 modulos del sistema mas la facturacion simulada."""
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 import models
 from database import engine
@@ -44,6 +46,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Si un pedido repetido llega a la base y choca con una restriccion UNIQUE (por ejemplo,
+# la misma lectura dos veces), se responde 409 con un mensaje claro en lugar de un 500
+@app.exception_handler(IntegrityError)
+def registro_duplicado(_request: Request, _error: IntegrityError):
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "Ese registro ya existe o choca con otro dato (¿se envió dos veces?)"},
+    )
+
 
 # Cada router es un modulo del sistema
 app.include_router(administracion.router)

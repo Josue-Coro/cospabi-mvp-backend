@@ -12,7 +12,7 @@ import models
 import schemas
 from database import get_db
 from pagos_qr import confirmar_pago_qr, crear_pago_qr, pago_qr_a_salida
-from reglas import actualizar_vencidos, ahora, detalle_aviso
+from reglas import actualizar_vencidos, ahora, bloquear_fila, detalle_aviso
 from routers.facturacion import detalle_factura
 from routers.operaciones import aviso_a_salida
 from seguridad import (
@@ -35,6 +35,8 @@ def iniciar_sesion_socio(datos: schemas.LoginIn, db: Session = Depends(get_db)):
     )
     if cuenta is None:
         raise HTTPException(status_code=401, detail="Código fijo o contraseña incorrectos")
+    # Intentos en paralelo se atienden de uno en uno: ninguno se salta el contador
+    cuenta = bloquear_fila(db, models.CuentaSocio, cuenta.id_cuenta_socio)
     revisar_bloqueo(cuenta)
     if not verificar_contrasena(datos.contrasena, cuenta.contrasena):
         registrar_intento_fallido(cuenta)
@@ -155,7 +157,8 @@ def generar_pago_qr(
     El pago queda PENDIENTE hasta que Libélula lo confirma (callback o consulta).
     """
     actualizar_vencidos(db)
-    aviso = aviso_del_socio(db, socio, id_aviso)
+    aviso_del_socio(db, socio, id_aviso)
+    aviso = bloquear_fila(db, models.Aviso, id_aviso)  # dos clics a la vez: uno espera al otro
     pago = crear_pago_qr(db, aviso, datos, cajero="PORTAL", caja=None, forma_pago="PORTAL")
     return pago_qr_a_salida(pago)
 

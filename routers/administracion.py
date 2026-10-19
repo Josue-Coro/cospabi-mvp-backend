@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from database import get_db
-from reglas import ahora, hoy, registrar_bitacora
+from reglas import ahora, bloquear_fila, hoy, registrar_bitacora
 from seguridad import (
     CAJERO,
     MAX_INTENTOS,
@@ -37,6 +37,8 @@ def iniciar_sesion(datos: schemas.LoginIn, db: Session = Depends(get_db)):
     )
     if usuario is None:
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+    # Intentos en paralelo se atienden de uno en uno: ninguno se salta el contador
+    usuario = bloquear_fila(db, models.UsuarioAdmin, usuario.id_usuario_admin)
     revisar_bloqueo(usuario)
 
     if not verificar_contrasena(datos.contrasena, usuario.contrasena):
@@ -229,6 +231,8 @@ def abrir_caja(
     usuario: models.UsuarioAdmin = Depends(requiere_rol(CAJERO)),
 ):
     """HU5: abre la caja del usuario. La fecha y la hora se toman del servidor."""
+    # Se bloquea al usuario para que dos pedidos a la vez no abran dos cajas
+    bloquear_fila(db, models.UsuarioAdmin, usuario.id_usuario_admin)
     if buscar_caja_abierta(db, usuario.id_usuario_admin):
         raise HTTPException(status_code=400, detail="Ya tiene una caja abierta")
 
@@ -267,6 +271,7 @@ def cerrar_caja(
     Compara el efectivo contado con el esperado (monto de apertura + cobros en
     efectivo). Si no cuadra, exige una observacion.
     """
+    bloquear_fila(db, models.UsuarioAdmin, usuario.id_usuario_admin)  # un solo cierre a la vez
     caja = buscar_caja_abierta(db, usuario.id_usuario_admin)
     if caja is None:
         raise HTTPException(status_code=400, detail="No tiene una caja abierta")
